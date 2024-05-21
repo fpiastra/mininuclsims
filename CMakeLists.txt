@@ -56,8 +56,8 @@ add_library(common_objs OBJECT ${sources})
 add_executable(mininuclsims ${PROJECT_SOURCE_DIR}/prog/mininuclsims.cpp $<TARGET_OBJECTS:common_objs>)
 target_link_libraries(mininuclsims ${Geant4_LIBRARIES} ${ROOT_LIBRARIES})
 
-add_executable(mininucldsims-PVlist ${PROJECT_SOURCE_DIR}/prog/mininuclsims-PVlist.cpp $<TARGET_OBJECTS:common_objs>)
-target_link_libraries(mininucldsims-PVlist ${Geant4_LIBRARIES} ${ROOT_LIBRARIES})
+add_executable(mininuclsims-PVlist ${PROJECT_SOURCE_DIR}/prog/mininuclsims-PVlist.cpp $<TARGET_OBJECTS:common_objs>)
+target_link_libraries(mininuclsims-PVlist ${Geant4_LIBRARIES} ${ROOT_LIBRARIES})
 
 add_executable(mininuclsims-LVlist ${PROJECT_SOURCE_DIR}/prog/mininuclsims-LVlist.cpp $<TARGET_OBJECTS:common_objs>)
 target_link_libraries(mininuclsims-LVlist ${Geant4_LIBRARIES} ${ROOT_LIBRARIES})
