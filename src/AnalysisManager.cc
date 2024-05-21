@@ -43,8 +43,6 @@ using namespace CLHEP;
 using json = nlohmann::json;
 
 
-G4Mutex mutex_an_man = G4MUTEX_INITIALIZER;
-
 
 AnalysisManager::AnalysisManager(PrimGenAction *pPrimaryGeneratorAction):
 fPrimaryGeneratorAction(pPrimaryGeneratorAction),
@@ -344,6 +342,8 @@ void AnalysisManager::EndOfRun(const G4Run *pRun)
 }
 
 
+G4Mutex mutex_an_man_boe = G4MUTEX_INITIALIZER;
+
 void AnalysisManager::BeginOfEvent(const G4Event *pEvent)
 {
 	// grab event ID
@@ -357,6 +357,9 @@ void AnalysisManager::BeginOfEvent(const G4Event *pEvent)
 	//ONLY OPTICAL PHOTONS
 	fWasAtBoundary = false;
 	
+	G4AutoLock l(&mutex_an_man_boe);
+	l.lock();
+
 	//These initialisations are needed at the start of event
 	fLastTrackId = -1;
 	fLastPhysVol = nullptr;
@@ -399,7 +402,8 @@ void AnalysisManager::BeginOfEvent(const G4Event *pEvent)
 		fEventData->fPrimary_Zpos = posVec.z();
 	}
 	
-	
+	l.unlock();
+
 #ifndef NDEBUG
 	if(fVerbose>=AnalysisVerbosity::kDebug){
 		G4cout << "Debug --> AnalysisManager::BeginOfEvent: EventID: " << fCurrentEvent << "; Primary volume: " << fPrimVol->GetName() << "; Copy number: " << touch->GetCopyNumber() << G4endl;
@@ -408,10 +412,16 @@ void AnalysisManager::BeginOfEvent(const G4Event *pEvent)
 }
 
 
-void AnalysisManager::EndOfEvent(const G4Event *pEvent)
-{
+G4Mutex mutex_an_man_eoe = G4MUTEX_INITIALIZER;
+
+void AnalysisManager::EndOfEvent(const G4Event *pEvent){
+	
 	if(fSave>DatasaveLevel::kOff){
+		G4AutoLock l(&mutex_an_man_eoe);
+		l.lock();
+		
 		G4bool save = true;
+		
 		if(fEventData->fPrimPartType->size()==0){
 			G4cerr << "\nERROR --> AnalysisManager::EndOfEvent: \"fEventData->fPrimPartType\" vector is empty for Event ID " << fCurrentEvent << "!" << G4endl;
 			save = false;
@@ -438,6 +448,7 @@ void AnalysisManager::EndOfEvent(const G4Event *pEvent)
 		}
 
 		if(fTree && save) fTree->Fill();
+		l.unlock();
 	}
 }
 
@@ -458,8 +469,10 @@ void AnalysisManager::PreUserTrackingAction(const G4Track* pTrack){
 	//Check if the track is known and if it is a primary track
 	//This book-keeping code must be executed whatever the saving options are
 	if( fTrackIDs.find(fCurrentTrackId)==fTrackIDs.end() ){
+		//This is for a track not yet known
 		fTrackParentIDsMap[fCurrentTrackId] = parentid;
-		if(isPrimary){ //It is a primary track at its very first step (in the primary volume)
+		if(isPrimary){
+			//It is a primary track at its very first step (in the primary volume)
 			fTrackGenerationMap[fCurrentTrackId] = 1;
 			fFirstParentIDMap[fCurrentTrackId] = fCurrentTrackId;
 			
@@ -521,6 +534,8 @@ void AnalysisManager::PreUserTrackingAction(const G4Track* pTrack){
 }
 
 
+G4Mutex mutex_an_man_step = G4MUTEX_INITIALIZER;
+
 void AnalysisManager::Step(const G4Step *pStep, const G4SteppingManager* pStepMan)
 {
 #ifndef NDEBUG
@@ -529,7 +544,7 @@ void AnalysisManager::Step(const G4Step *pStep, const G4SteppingManager* pStepMa
 	//if( (fVerbose<3) && (fOptPhSenDetVolNames.empty()) )return;
 	if(!pStep) return; //This just avoids problems, although would be a big problem to be fixed
 	
-	G4AutoLock l(&mutex_an_man);
+	G4AutoLock l(&mutex_an_man_step);
 	l.lock();
 	
 	if(fCurrentTrack!=pStep->GetTrack()){
@@ -663,6 +678,7 @@ void AnalysisManager::Step(const G4Step *pStep, const G4SteppingManager* pStepMa
 				G4cout << "\nDebug --> AnalysisManager::Step: Hit in <" << Vol_pre->GetName() << "> volume. Exiting the function." << G4endl;
 			}
 #endif
+			l.unlock();
 			return;
 		}
 	}
@@ -708,7 +724,7 @@ void AnalysisManager::Step(const G4Step *pStep, const G4SteppingManager* pStepMa
 		
 		fEventData->fTrackId->push_back( fLastTrackId );
 		fEventData->fPartType->push_back(fLastPartType);
-		fEventData->fPartName->push_back(fCurrentTrack->GetParticleDefinition()->GetParticleName());
+		fEventData->fPartName->push_back(partName);
 		fEventData->fEkin->push_back( saveStepPoint->GetKineticEnergy() );
 		fEventData->fXpos->push_back( (saveStepPoint->GetPosition()).x() );
 		fEventData->fYpos->push_back( (saveStepPoint->GetPosition()).y() );
@@ -734,6 +750,7 @@ void AnalysisManager::Step(const G4Step *pStep, const G4SteppingManager* pStepMa
 						fEventData->fDepProc->push_back( retcode );//This is a negative number and indicates for problems
 					}
 				}
+				fEventData->fCreatProc->push_back(fTrackCreatProc[fCurrentTrackId]);
 			}
 			
 		} // if(fSave>=kSdSteps)...
