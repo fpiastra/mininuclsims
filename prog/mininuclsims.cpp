@@ -235,8 +235,9 @@ int main(int argc, char **argv)
 void usage()
 {
 	G4cout << "\nUsage:" << G4endl;
-	G4cout << "ArCubeOptPh -g gdmlfile [-p preinit.mac] [-m macro.mac] [-o output.root] [-n nevents]" << G4endl;
-	G4cout << "ArCubeOptPh -g gdmlfile -G [-p preinit.mac]"<< G4endl;
+	G4cout << "mininuclsims -g gdmlfile [-p preinit.mac] [-m macro.mac] [-o output.root] [-n nevents]" << G4endl;
+	G4cout << "mininuclsims -g gdmlfile -G [-p preinit.mac]"<< G4endl;
+	G4cout << "mininuclsims -g gdmlfile -i [-p preinit.mac]"<< G4endl;
 	exit(0);
 }
 
