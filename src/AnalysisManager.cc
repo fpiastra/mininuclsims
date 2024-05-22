@@ -37,6 +37,7 @@ using std::vector;
 using std::stringstream;
 using std::set;
 using std::ofstream;
+using std::string;
 
 using namespace CLHEP;
 
@@ -87,7 +88,7 @@ AnalysisManager::~AnalysisManager()
 void AnalysisManager::BeginOfRun(const G4Run *pRun)
 {
 #ifndef NDEBUG
-	if(fVerbose>=AnalysisVerbosity::kDebug)  G4cout << "\nDebug --> Entering into AnalysisManager::BeginOfRun" << G4endl;
+	if(fVerbose>=AnalysisVerbosity::kDebug)  G4cout << "\nDebug --> AnalysisManager::BeginOfRun: Entering the function." << G4endl;
 #endif
 	G4int randseed;
 	
@@ -136,7 +137,7 @@ void AnalysisManager::BeginOfRun(const G4Run *pRun)
 		return;
 	}
 	
-	fTreeFile = TFile::Open(fDataFilename.c_str(), "RECREATE", "File containing event data of optical photon simulations of ArgonCube");
+	fTreeFile = TFile::Open(fDataFilename.c_str(), "RECREATE", "File containing event data of the simulations");
 	
 	
 	if(!fTreeFile){//Here there is a problem
@@ -319,7 +320,7 @@ void AnalysisManager::BeginOfRun(const G4Run *pRun)
 	
 	
 #ifndef NDEBUG
-	if(fVerbose>=AnalysisVerbosity::kDebug) G4cout << "\nDebug --> Exiting from AnalysisManager::BeginOfRun" << G4endl;
+	if(fVerbose>=AnalysisVerbosity::kDebug) G4cout << "\nDebug --> AnalysisManager::BeginOfRun: Exiting the function." << G4endl;
 #endif
 }
 
@@ -346,6 +347,9 @@ G4Mutex mutex_an_man_boe = G4MUTEX_INITIALIZER;
 
 void AnalysisManager::BeginOfEvent(const G4Event *pEvent)
 {
+#ifndef NDEBUG
+	if(fVerbose>=AnalysisVerbosity::kDebug) G4cout << "\nDebug --> AnalysisManager::BeginOfEvent: Entering the function.\n" << G4endl;
+#endif
 	// grab event ID
 	fCurrentEvent = pEvent->GetEventID();
 	
@@ -404,10 +408,12 @@ void AnalysisManager::BeginOfEvent(const G4Event *pEvent)
 	
 	l.unlock();
 
-#ifndef NDEBUG
-	if(fVerbose>=AnalysisVerbosity::kDebug){
-		G4cout << "Debug --> AnalysisManager::BeginOfEvent: EventID: " << fCurrentEvent << "; Primary volume: " << fPrimVol->GetName() << "; Copy number: " << touch->GetCopyNumber() << G4endl;
+	if(fVerbose>=AnalysisVerbosity::kDetails){
+		G4cout << "Detail --> AnalysisManager::BeginOfEvent: EventID: " << fCurrentEvent << "; Primary volume: " << fPrimVol->GetName() << "; Copy number: " << touch->GetCopyNumber() << G4endl;
 	}
+
+#ifndef NDEBUG
+	if(fVerbose>=AnalysisVerbosity::kDebug) G4cout << "\nDebug --> Entering in AnalysisManager::BeginOfEvent: Exiting the function\n" << G4endl;
 #endif
 }
 
@@ -462,7 +468,7 @@ void AnalysisManager::PreUserTrackingAction(const G4Track* pTrack){
 	l.lock();
 	
 	fCurrentTrack = (G4Track*)pTrack;
-	G4int fCurrentTrackId = fCurrentTrack->GetTrackID();
+	fCurrentTrackId = fCurrentTrack->GetTrackID();
 	G4int parentid = fCurrentTrack->GetParentID();
 	G4bool isPrimary = (!fCurrentTrack->GetCreatorProcess()) || (parentid<=0);
 	
@@ -550,7 +556,7 @@ void AnalysisManager::Step(const G4Step *pStep, const G4SteppingManager* pStepMa
 	if(fCurrentTrack!=pStep->GetTrack()){
 		G4cerr << "\nERROR --> AnalysisManager::Step: The track pointer from the G4Step is different from the \"fCurrentTrack\" pointer for Event ID: " << fCurrentEvent << "." << G4endl;
 	}
-	//G4Track *track = pStep->GetTrack();
+	G4Track *track = pStep->GetTrack();
 	
 	G4StepPoint *preStepPoint = pStep->GetPreStepPoint();
 	
@@ -572,7 +578,52 @@ void AnalysisManager::Step(const G4Step *pStep, const G4SteppingManager* pStepMa
 	
 	if(!Vol) return;
 	
-	
+	if(fCurrentTrack!=track){
+		G4cout << "WARNING --> AnalysisManager::Step: The current track (" << fCurrentTrack << ") and the track of the step (" << track << ") are different pointers!" << G4endl;
+	}
+
+	//Recalculate the volume id (recursive process) only if the volume pointer is different from before
+	if( (Vol_pre!=fLastPhysVol) || (fCurrentTrackId!=fLastTrackId) )
+	{
+#ifndef NDEBUG	
+		if(fVerbose>=AnalysisVerbosity::kDebug){
+			string pv_name = "";
+			if(fLastPhysVol) pv_name = fLastPhysVol->GetName();
+			G4cout << "\nDebug --> AnalysisManager::Step: Recalculation of volume ID, track ID, etc:" << G4endl;
+			G4cout << "        Last step PV: "<< fLastPhysVol << ": " << pv_name << G4endl;
+			pv_name = "";
+			if(Vol_pre) pv_name = Vol_pre->GetName();
+			G4cout << "     Current step PV: "<< Vol_pre << ": " << pv_name << G4endl;
+			G4cout << "       Last track ID: "<< fLastTrackId << G4endl;
+			G4cout << "    Current track ID: "<< fCurrentTrackId << G4endl;
+		}
+#endif
+		fLastTrackId = fCurrentTrackId;
+		if(fCurrentTrack->GetParticleDefinition()->IsGeneralIon()){
+			fLastPartType = fGenIonId;
+		}else{
+			fLastPartType = fParticlesDefsMap[fCurrentTrack->GetParticleDefinition()];
+		}
+		fLastPhysVol = Vol_pre;
+		fLastVolIdx = fPhysVolUniqueMap[Vol_pre];
+		fLastCopyNum = (*preTouch)->GetCopyNumber();
+		fLastVolGlobalCopy = FindVolGlobalCopy(*preTouch);
+	}
+
+#ifndef NDEBUG	
+	if(fVerbose>=AnalysisVerbosity::kDebug){
+		G4cout << "\nDebug --> AnalysisManager::Step: Status of the member variables after update block:" << G4endl;
+		G4cout << "          fLastPhysVol: " << fLastPhysVol << G4endl;
+		G4cout << "           fLastVolIdx: " << fLastVolIdx << G4endl;
+		G4cout << "          fLastCopyNum: " << fLastCopyNum << G4endl;
+		G4cout << "    fLastVolGlobalCopy: " << fLastVolGlobalCopy << G4endl;
+		G4cout << "          fLastTrackId: " << fLastTrackId << G4endl;
+		G4cout << "         fLastPartType: " << fLastPartType << G4endl;
+		G4cout << "              partName: " << partName << G4endl;
+	}
+#endif
+
+
 	G4TrackStatus trstatus = fCurrentTrack->GetTrackStatus();
 	
 	//Volume printouts
@@ -657,7 +708,7 @@ void AnalysisManager::Step(const G4Step *pStep, const G4SteppingManager* pStepMa
 	}
 	
 	
-	if( fSave==DatasaveLevel::kOff ){
+	if( fSave==DatasaveLevel::kOff){
 #ifndef NDEBUG
 		if(fVerbose>=AnalysisVerbosity::kDebug) G4cout << "\nDebug --> AnalysisManager::Step: Exiting from method without saving.\n" << G4endl;
 #endif
@@ -675,17 +726,18 @@ void AnalysisManager::Step(const G4Step *pStep, const G4SteppingManager* pStepMa
 			//In all other saving modes I am interested only in hits or steps in specific physical volumes (sensitive volumes)
 #ifndef NDEBUG
 			if(fVerbose>=AnalysisVerbosity::kDebug){
-				G4cout << "\nDebug --> AnalysisManager::Step: Hit in <" << Vol_pre->GetName() << "> volume. Exiting the function." << G4endl;
+				G4cout << "\nDebug --> AnalysisManager::Step: Step in <" << Vol_pre->GetName() << "> volume. This is not a sensitive volume. Exiting the function." << G4endl;
 			}
-#endif
+			
 			l.unlock();
 			return;
+#endif
 		}
 	}
 
 #ifndef NDEBUG	
 	if(fVerbose>=AnalysisVerbosity::kDebug){
-		G4cout << "\nDebug --> AnalysisManager::Step: Hit in <" << Vol_pre->GetName() << "> volume. Saving the hit." << G4endl;
+		G4cout << "\nDebug --> AnalysisManager::Step: Hit in <" << Vol_pre->GetName() << "> volume. Saving the step/hit." << G4endl;
 	}
 #endif
 
@@ -693,20 +745,6 @@ void AnalysisManager::Step(const G4Step *pStep, const G4SteppingManager* pStepMa
 	fEventData->fNbTotHits += 1;//This is the number of the total recorded steps in "stepping mode" or the number energy releases of the particle is in a SD volume when in "hits mode"
 	
 	
-	//Recalculate the volume id (recursive process) only if the volume pointer is different from before
-	if( (Vol_pre!=fLastPhysVol) || (fCurrentTrackId!=fLastTrackId) )
-	{
-		fLastTrackId = fCurrentTrackId;
-		if(fCurrentTrack->GetParticleDefinition()->IsGeneralIon()){
-			fLastPartType = fGenIonId;
-		}else{
-			fLastPartType = fParticlesDefsMap[fCurrentTrack->GetParticleDefinition()];
-		}
-		fLastPhysVol = Vol_pre;
-		fLastVolIdx = fPhysVolUniqueMap[Vol_pre];
-		fLastCopyNum = (*preTouch)->GetCopyNumber();
-		fLastVolGlobalCopy = FindVolGlobalCopy(*preTouch);
-	}
 	
 	
 	//The physical volume where the step occurred is the one taken from the "pre-step point", but the physical quantities are taken from the post step point.
